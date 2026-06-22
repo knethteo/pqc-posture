@@ -617,6 +617,9 @@ def get_asset_detail(uuid: str):
     ipv4s    = asset_info.get("ipv4")     or []
     os_list  = asset_info.get("operating_system") or []
 
+    NON_PQC_IDS = {pid for cat, grp in PLUGINS.items() if cat != "core_pqc" for pid in grp}
+    has_non_pqc = bool(plugin_ids_present & NON_PQC_IDS)
+
     result = {
         "uuid": uuid,
         "name": _first(fqdns + hostnames + netbios + ipv4s, "Unknown"),
@@ -625,7 +628,7 @@ def get_asset_detail(uuid: str):
         "last_seen": asset_info.get("last_seen"),
         "fqdns": fqdns,
         "hostnames": hostnames,
-        **compute_verdict(plugin_ids_present),
+        **compute_verdict(plugin_ids_present, has_non_pqc_findings=has_non_pqc),
         "plugins": {str(pid): data for pid, data in plugin_map.items()},
         "shors_services": shors_services,
         "shors_raw_output": shors_raw_output,
