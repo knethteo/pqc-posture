@@ -83,6 +83,7 @@
         </tr>
       </tbody>
     </table>
+    <div id="pagination" class="pagination"></div>
   </div>
 </main>
 
@@ -94,87 +95,150 @@
 
 <script src="/static/app.js"></script>
 <script>
-  let allAssets = [];
-  let sortCol = "name";
-  let sortDir = 1; // 1 = asc, -1 = desc
-  let summary = {};
+  const PAGE_SIZE = 20;
+  let allAssets  = [];
+  let sortCol    = "name";
+  let sortDir    = 1;
+  let currentPage = 1;
+  let isLoading  = false;
 
-  // ── Load ────────────────────────────────────────────────────────────────────
-  async function load(search = "") {
-    try {
-      const params = new URLSearchParams();
-      if (search) params.set("search", search);
-      const data = await apiFetch("/api/pqc-assets?" + params.toString());
-      if (!data) return;
-
-      allAssets = data.assets;
-      summary   = data.summary;
-
-      document.getElementById("tile-risk").textContent   = summary.total_at_risk ?? "—";
-      document.getElementById("tile-safe").textContent   = summary.quantum_safe   ?? "—";
-      document.getElementById("tile-review").textContent = summary.review         ?? "—";
-      document.getElementById("tile-total").textContent  = data.total;
-
-      renderTable(allAssets);
-    } catch (err) {
-      document.getElementById("tbody").innerHTML =
-        `<tr><td colspan="6" style="padding:20px;color:var(--red)">${esc(err.message)}</td></tr>`;
-    }
-  }
-
-  // ── Render ──────────────────────────────────────────────────────────────────
-  function renderTable(assets) {
-    // Sort
-    const sorted = [...assets].sort((a, b) => {
+  // ── Filtering + sorting (client-side) ────────────────────────────────────────
+  function getFiltered() {
+    const q = document.getElementById("search").value.trim().toLowerCase();
+    let filtered = q
+      ? allAssets.filter(a =>
+          (a.name || "").toLowerCase().includes(q) ||
+          (a.ipv4 || "").toLowerCase().includes(q) ||
+          (a.os   || "").toLowerCase().includes(q))
+      : allAssets;
+    return [...filtered].sort((a, b) => {
       const av = a[sortCol] ?? "";
       const bv = b[sortCol] ?? "";
       return av < bv ? -sortDir : av > bv ? sortDir : 0;
     });
-
-    if (sorted.length === 0) {
-      document.getElementById("tbody").innerHTML =
-        `<tr><td colspan="6"><div class="empty">No assets match the current filter.</div></td></tr>`;
-      return;
-    }
-
-    document.getElementById("tbody").innerHTML = sorted.map(a => `
-      <tr onclick="window.location='/asset?uuid=${esc(a.uuid)}'">
-        <td class="name-cell">${esc(a.name)}</td>
-        <td class="muted">${esc(a.ipv4 ?? "—")}</td>
-        <td class="muted">${esc(a.os  ?? "—")}</td>
-        <td>${pillHtml(a.verdict_color, a.verdict)}</td>
-        <td>${esc(a.pqc_findings)}</td>
-        <td class="muted">${fmtDate(a.last_seen)}</td>
-      </tr>
-    `).join("");
   }
 
-  // ── Sort headers ─────────────────────────────────────────────────────────────
+  // ── Tiles ─────────────────────────────────────────────────────────────────────
+  function updateTiles() {
+    document.getElementById("tile-risk").textContent   = allAssets.filter(a => a.verdict_color === "red").length;
+    document.getElementById("tile-safe").textContent   = allAssets.filter(a => a.verdict_color === "green").length;
+    document.getElementById("tile-review").textContent = allAssets.filter(a => a.verdict_color === "amber").length;
+    document.getElementById("tile-total").textContent  = allAssets.length + (isLoading ? "…" : "");
+  }
+
+  // ── Render table + pagination ─────────────────────────────────────────────────
+  let renderPending = false;
+  function scheduleRender() {
+    if (!renderPending) {
+      renderPending = true;
+      requestAnimationFrame(() => { renderPending = false; renderTable(); });
+    }
+  }
+
+  function renderTable() {
+    const filtered   = getFiltered();
+    const total      = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const page  = filtered.slice(start, start + PAGE_SIZE);
+
+    if (total === 0 && isLoading) {
+      document.getElementById("tbody").innerHTML =
+        `<tr class="loading-row"><td colspan="6"><span class="spinner"></span> Fetching assets…</td></tr>`;
+    } else if (total === 0) {
+      document.getElementById("tbody").innerHTML =
+        `<tr><td colspan="6"><div class="empty">No assets match the current filter.</div></td></tr>`;
+    } else {
+      document.getElementById("tbody").innerHTML = page.map(a => `
+        <tr onclick="window.location='/asset?uuid=${esc(a.uuid)}'">
+          <td class="name-cell">${esc(a.name)}</td>
+          <td class="muted">${esc(a.ipv4 ?? "—")}</td>
+          <td class="muted">${esc(a.os  ?? "—")}</td>
+          <td>${pillHtml(a.verdict_color, a.verdict)}</td>
+          <td>${esc(a.pqc_findings)}</td>
+          <td class="muted">${fmtDate(a.last_seen)}</td>
+        </tr>`).join("");
+    }
+
+    // Pagination bar
+    const pg = document.getElementById("pagination");
+    if (total === 0) { pg.innerHTML = ""; return; }
+    const loadNote = isLoading ? ` <span style="opacity:.6">(loading…)</span>` : "";
+    pg.innerHTML = `
+      <span>Showing ${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total}${loadNote}</span>
+      <div class="page-btns">
+        <button class="page-btn" onclick="goPage(${currentPage - 1})" ${currentPage === 1 ? "disabled" : ""}>← Prev</button>
+        <span class="page-num">Page ${currentPage} of ${totalPages}</span>
+        <button class="page-btn" onclick="goPage(${currentPage + 1})" ${currentPage === totalPages ? "disabled" : ""}>Next →</button>
+      </div>`;
+  }
+
+  function goPage(n) {
+    const totalPages = Math.max(1, Math.ceil(getFiltered().length / PAGE_SIZE));
+    currentPage = Math.max(1, Math.min(n, totalPages));
+    renderTable();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // ── Streaming load ────────────────────────────────────────────────────────────
+  function load() {
+    isLoading   = true;
+    allAssets   = [];
+    currentPage = 1;
+    renderTable();
+    updateTiles();
+
+    const evtSource = new EventSource("/api/pqc-assets/stream");
+
+    evtSource.onmessage = e => {
+      const data = JSON.parse(e.data);
+      if (data.done) {
+        evtSource.close();
+        isLoading = false;
+        updateTiles();
+        renderTable();
+        return;
+      }
+      allAssets.push(data);
+      updateTiles();
+      scheduleRender();
+    };
+
+    evtSource.onerror = () => {
+      evtSource.close();
+      isLoading = false;
+      if (allAssets.length === 0) {
+        document.getElementById("tbody").innerHTML =
+          `<tr><td colspan="6" style="padding:20px;color:var(--red)">Connection error — check configuration.</td></tr>`;
+      } else {
+        renderTable();
+      }
+    };
+  }
+
+  // ── Sort headers ──────────────────────────────────────────────────────────────
   document.querySelectorAll("thead th[data-col]").forEach(th => {
     th.addEventListener("click", () => {
       const col = th.dataset.col;
-      if (sortCol === col) {
-        sortDir = -sortDir;
-      } else {
-        sortCol = col;
-        sortDir = 1;
-      }
-      document.querySelectorAll("thead th").forEach(h => {
-        h.classList.remove("sort-asc", "sort-desc");
-      });
+      sortDir = (sortCol === col) ? -sortDir : 1;
+      sortCol = col;
+      currentPage = 1;
+      document.querySelectorAll("thead th").forEach(h => h.classList.remove("sort-asc", "sort-desc"));
       th.classList.add(sortDir === 1 ? "sort-asc" : "sort-desc");
-      renderTable(allAssets);
+      renderTable();
     });
   });
 
-  // ── Search ───────────────────────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────────────────
   let searchTimer;
-  document.getElementById("search").addEventListener("input", e => {
+  document.getElementById("search").addEventListener("input", () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => load(e.target.value.trim()), 300);
+    searchTimer = setTimeout(() => { currentPage = 1; renderTable(); }, 150);
   });
 
-  // ── Init ─────────────────────────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────────
   checkConfigured().then(() => load());
 </script>
 </body>

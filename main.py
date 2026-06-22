@@ -3,10 +3,11 @@ import re
 import time
 import json
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, Any, Set, List
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -427,7 +428,102 @@ def get_pqc_assets(
     }
 
 
-# ─── Asset detail endpoint ────────────────────────────────────────────────────
+# ─── Fleet stream endpoint (SSE) ─────────────────────────────────────────────
+@app.get("/api/pqc-assets/stream")
+def stream_pqc_assets():
+    def generate():
+        # Cache hit — stream all at once
+        cached = _cache_get("pqc_assets")
+        if cached:
+            for a in cached:
+                yield f"data: {json.dumps(a)}\n\n"
+            summary = {
+                "total_at_risk": sum(1 for a in cached if a["verdict_color"] == "red"),
+                "quantum_safe":  sum(1 for a in cached if a["verdict_color"] == "green"),
+                "review":        sum(1 for a in cached if a["verdict_color"] == "amber"),
+                "no_data":       sum(1 for a in cached if a["verdict_color"] == "grey"),
+            }
+            yield f'data: {json.dumps({"done": True, "summary": summary})}\n\n'
+            return
+
+        tio = _get_tio()
+        asset_store: Dict[str, dict] = {}
+        NON_PQC_CATS = set(PLUGINS.keys()) - {"core_pqc"}
+
+        # Phase 1: collect asset universe from all category batches
+        for cat, group_plugins in PLUGINS.items():
+            id_str = ",".join(str(p) for p in group_plugins.keys())
+            try:
+                for asset in tio.workbenches.vuln_assets(("plugin.id", "eq", id_str)):
+                    uid = asset.get("id")
+                    if not uid:
+                        continue
+                    if uid not in asset_store:
+                        asset_store[uid] = {"info": asset, "categories": set(), "pqc_plugins": set()}
+                    asset_store[uid]["categories"].add(cat)
+            except Exception:
+                pass
+
+        for pid in [277650, 298387, 277653]:
+            try:
+                for asset in tio.workbenches.vuln_assets(("plugin.id", "eq", str(pid))):
+                    uid = asset.get("id")
+                    if uid in asset_store:
+                        asset_store[uid]["pqc_plugins"].add(pid)
+                    elif uid:
+                        asset_store[uid] = {"info": asset, "categories": {"core_pqc"}, "pqc_plugins": {pid}}
+            except Exception:
+                pass
+
+        # Phase 2: parallel OS enrichment — stream each asset as its info resolves
+        def enrich(uid: str, data: dict) -> dict:
+            try:
+                info = tio.workbenches.asset_info(uid)
+                os_val = _first(info.get("operating_system") or [])
+            except Exception:
+                os_val = None
+            asset = data["info"]
+            pqc_plugins = data["pqc_plugins"]
+            categories = data["categories"]
+            has_non_pqc = bool(categories & NON_PQC_CATS)
+            return {
+                "uuid": uid,
+                "name": _asset_name(asset),
+                "ipv4": _first(asset.get("ipv4")),
+                "os": os_val,
+                "last_seen": asset.get("last_seen"),
+                "pqc_findings": len(categories),
+                **compute_verdict(pqc_plugins, has_non_pqc_findings=has_non_pqc),
+            }
+
+        result = []
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(enrich, uid, data): uid for uid, data in asset_store.items()}
+            for fut in as_completed(futures):
+                try:
+                    record = fut.result()
+                    result.append(record)
+                    yield f"data: {json.dumps(record)}\n\n"
+                except Exception:
+                    pass
+
+        _cache_set("pqc_assets", result)
+        summary = {
+            "total_at_risk": sum(1 for a in result if a["verdict_color"] == "red"),
+            "quantum_safe":  sum(1 for a in result if a["verdict_color"] == "green"),
+            "review":        sum(1 for a in result if a["verdict_color"] == "amber"),
+            "no_data":       sum(1 for a in result if a["verdict_color"] == "grey"),
+        }
+        yield f'data: {json.dumps({"done": True, "summary": summary})}\n\n'
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+
 @app.get("/api/asset/{uuid}")
 def get_asset_detail(uuid: str):
     cache_key = f"asset_{uuid}"
