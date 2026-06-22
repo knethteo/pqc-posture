@@ -29,7 +29,11 @@ PLUGINS: Dict[str, Dict[int, str]] = {
     },
     "cipher_inventory": {
         21643:  "SSL Cipher Suites Supported",
-        70657:  "SSH Algorithms Supported",
+        70657:  "SSH Algorithms and Languages Supported",
+        57041:  "SSL Perfect Forward Secrecy Cipher Suites Supported",
+        156899: "SSL/TLS Recommended Cipher Suites",
+        70544:  "SSL Cipher Block Chaining Cipher Suites Supported",
+        42873:  "SSL Medium Strength Cipher Suites Supported (SWEET32)",
     },
     "weak_key_exchange": {
         83875:  "SSH Weak Key Exchange Algorithms Enabled",
@@ -43,12 +47,21 @@ PLUGINS: Dict[str, Dict[int, str]] = {
         90317:  "SSH Weak MAC Algorithms Enabled",
         153954: "SSH Server HMAC Weak Algorithms",
         187315: "SSH Deprecated Algorithms Supported",
+        153588: "SSH SHA-1 HMAC Algorithms Enabled",
     },
     "cert_crypto_agility": {
         35291:  "SSL Certificate Signed Using Weak Hashing Algorithm",
         86067:  "SSL Certificate Chain Contains Weak Hash Algorithms",
         60108:  "SSL Certificate Chain Contains RSA Keys < 2048 bits",
         103864: "SSL Certificate with Wrong Hostname",
+        45411:  "SSL Certificate with Wrong Hostname",
+        51192:  "SSL Certificate Cannot Be Trusted",
+        15901:  "SSL Certificate Expiry",
+        10863:  "SSL Certificate Information",
+        42981:  "SSL Certificate Expiry - Future Expiry",
+        83298:  "SSL Certificate Chain Contains Certificates Expiring Soon",
+        45410:  "SSL Certificate 'commonName' Mismatch",
+        159544: "SSL Certificate with no Common Name",
     },
     "legacy_protocols": {
         20007:  "SSL Version 2 and 3 Protocol Detection",
@@ -57,11 +70,16 @@ PLUGINS: Dict[str, Dict[int, str]] = {
         121010: "TLS Version 1.1 Protocol Detection",
         136318: "TLS Version 1.2 Protocol Detection",
         138330: "TLS Version 1.3 Protocol Detection",  # good signal
-        42873:  "SSL SWEET32 Attack",
-        70544:  "SSL Medium Strength Cipher Suites (SWEET32/CBC)",
     },
     "windows_ad": {
         150481: "Kerberos Weak Encryption Type",
+    },
+    "was_ssl_tls": {
+        112530: "SSL/TLS Versions Supported",
+        112598: "SSL/TLS Server Cipher Suite Preference",
+        115491: "SSL/TLS Cipher Suites Supported",
+        112491: "SSL/TLS Certificate Information",
+        113045: "SSL/TLS Certificate Contains Wildcard Entries",
     },
 }
 
