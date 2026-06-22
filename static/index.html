@@ -51,6 +51,14 @@
     </div>
   </div>
 
+  <!-- Verdict legend -->
+  <div class="legend">
+    <div class="legend-item"><span class="legend-dot red"></span><strong>Not quantum-safe</strong> — Plugin 277650 or 298387 fired; services are using classical cryptography with no PQC equivalent detected.</div>
+    <div class="legend-item"><span class="legend-dot green"></span><strong>Quantum-safe</strong> — Plugin 277653 fired; post-quantum ciphers confirmed on all scanned services.</div>
+    <div class="legend-item"><span class="legend-dot amber"></span><strong>Review</strong> — No PQC-specific scan data yet, but crypto-adjacent weaknesses (weak key exchange, legacy TLS, weak certificates) were found. Run plugins 277650 / 277653 to get a definitive verdict.</div>
+    <div class="legend-item"><span class="legend-dot grey"></span><strong>No PQC data</strong> — Asset appeared in scan results but no PQC or crypto-adjacent plugins have fired.</div>
+  </div>
+
   <!-- Search toolbar -->
   <div class="toolbar">
     <input

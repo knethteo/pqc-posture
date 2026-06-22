@@ -163,6 +163,33 @@ strong, b { font-weight: 500; }
 .tile-value.grey  { color: var(--grey); }
 .tile-value.amber { color: var(--amber); }
 
+/* ── Verdict legend ──────────────────────────────────────────── */
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.legend-item { display: flex; align-items: baseline; gap: 8px; line-height: 1.5; }
+.legend-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+  top: 1px;
+}
+.legend-dot.red   { background: var(--red); }
+.legend-dot.green { background: var(--green); }
+.legend-dot.amber { background: var(--amber); }
+.legend-dot.grey  { background: var(--grey); }
+
 /* ── Toolbar ─────────────────────────────────────────────────── */
 .toolbar {
   display: flex;
