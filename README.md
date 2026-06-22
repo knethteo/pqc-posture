@@ -74,7 +74,11 @@ uvicorn main:app --reload --port 8000
 
 Open http://localhost:8000
 
-## Docker
+## Docker (alternative to Quick Start)
+
+If you have [Docker](https://www.docker.com/get-started/) installed, you can skip the Python/venv setup entirely and run the app in a container instead.
+
+Make sure you've completed Step 4 (configure your `.env` file) first, then:
 
 ```bash
 docker build -t pqc-posture .
