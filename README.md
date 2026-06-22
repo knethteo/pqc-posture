@@ -2,6 +2,16 @@
 
 Post-Quantum Cryptography readiness dashboard for Tenable Vulnerability Management (Tenable.io).
 
+## Screenshots
+
+**Fleet view** — summary tiles (Not Quantum-Safe / Quantum-Safe / Review / Total Assets) with a searchable asset table showing each host's verdict, PQC finding count, and last-seen date.
+
+![Fleet view](docs/screenshots/SCR-20260622-seag-2.png)
+
+**Asset detail** — per-host breakdown showing quantum-resistance status, current encryption method, technical details (OS, IPv6, FQDNs, TLS versions, weak services), and a table of ciphers vulnerable to Shor's algorithm detected by plugin 298387.
+
+![Asset detail](docs/screenshots/SCR-20260622-seuf.png)
+
 ## Quick start
 
 ### Prerequisites
