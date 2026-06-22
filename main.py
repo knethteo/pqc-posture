@@ -30,7 +30,6 @@ PLUGINS: Dict[str, Dict[int, str]] = {
     "cipher_inventory": {
         21643:  "SSL Cipher Suites Supported",
         70657:  "SSH Algorithms and Languages Supported",
-        57041:  "SSL Perfect Forward Secrecy Cipher Suites Supported",
         156899: "SSL/TLS Recommended Cipher Suites",
         70544:  "SSL Cipher Block Chaining Cipher Suites Supported",
         42873:  "SSL Medium Strength Cipher Suites Supported (SWEET32)",
@@ -57,7 +56,6 @@ PLUGINS: Dict[str, Dict[int, str]] = {
         45411:  "SSL Certificate with Wrong Hostname",
         51192:  "SSL Certificate Cannot Be Trusted",
         15901:  "SSL Certificate Expiry",
-        10863:  "SSL Certificate Information",
         42981:  "SSL Certificate Expiry - Future Expiry",
         83298:  "SSL Certificate Chain Contains Certificates Expiring Soon",
         45410:  "SSL Certificate 'commonName' Mismatch",
@@ -68,11 +66,15 @@ PLUGINS: Dict[str, Dict[int, str]] = {
         104743: "TLS Version 1.0 Protocol Detection",
         157288: "TLS Version 1.1 Protocol Deprecated",
         121010: "TLS Version 1.1 Protocol Detection",
-        136318: "TLS Version 1.2 Protocol Detection",
-        138330: "TLS Version 1.3 Protocol Detection",  # good signal
     },
     "windows_ad": {
         150481: "Kerberos Weak Encryption Type",
+    },
+    "ssl_inventory": {
+        10863:  "SSL Certificate Information",
+        57041:  "SSL Perfect Forward Secrecy Cipher Suites Supported",
+        136318: "TLS Version 1.2 Protocol Detection",
+        138330: "TLS Version 1.3 Protocol Detection",
     },
     "was_ssl_tls": {
         112530: "SSL/TLS Versions Supported",
@@ -92,6 +94,11 @@ PLUGIN_CATEGORY: Dict[int, str] = {
 PQC_NOT_SAFE: Set[int] = {277650, 298387}
 PQC_SAFE: Set[int] = {277653}
 PQC_CORE: Set[int] = set(PLUGINS["core_pqc"].keys())
+
+# Categories whose plugins are informational/positive — they do NOT indicate
+# crypto weakness and must not trigger a "Review" verdict on their own.
+NEUTRAL_CATS: Set[str] = {"was_ssl_tls", "ssl_inventory"}
+WEAKNESS_CATS: Set[str] = set(PLUGINS.keys()) - {"core_pqc"} - NEUTRAL_CATS
 
 SEVERITY_NAMES = {0: "Info", 1: "Low", 2: "Medium", 3: "High", 4: "Critical"}
 
@@ -342,14 +349,14 @@ def get_pqc_assets(
         # vuln_assets() accepts comma-separated plugin IDs → OR logic.
         # This gives us the asset universe + which categories fired per asset.
         asset_store: Dict[str, dict] = {}  # uuid -> {info, categories, pqc_plugins}
-        NON_PQC_CATS = set(PLUGINS.keys()) - {"core_pqc"}
 
         for cat, group_plugins in PLUGINS.items():
             id_str = ",".join(str(p) for p in group_plugins.keys())
             try:
-                for asset in tio.workbenches.vuln_assets(
+                assets_in_cat = list(tio.workbenches.vuln_assets(
                     ("plugin.id", "eq", id_str)
-                ):
+                ))
+                for asset in assets_in_cat:
                     uid = asset.get("id")
                     if not uid:
                         continue
@@ -363,25 +370,9 @@ def get_pqc_assets(
             except Exception:
                 pass
 
-        # Step 2: individual queries for the 3 verdict-critical plugins.
-        for pid in [277650, 298387, 277653]:
-            try:
-                for asset in tio.workbenches.vuln_assets(
-                    ("plugin.id", "eq", str(pid))
-                ):
-                    uid = asset.get("id")
-                    if uid in asset_store:
-                        asset_store[uid]["pqc_plugins"].add(pid)
-                    elif uid:
-                        asset_store[uid] = {
-                            "info": asset,
-                            "categories": {"core_pqc"},
-                            "pqc_plugins": {pid},
-                        }
-            except Exception:
-                pass
-
-        # Step 3: enrich with OS for all matched assets.
+        # Step 2: enrich each asset — OS info + PQC plugin detection.
+        # asset_vulns() returns ALL severities (including Info) unlike vuln_assets(),
+        # which silently excludes Info-severity plugins such as the core PQC set.
         os_lookup: Dict[str, Optional[str]] = {}
         for uid in asset_store:
             try:
@@ -390,12 +381,19 @@ def get_pqc_assets(
                 os_lookup[uid] = _first(os_list)
             except Exception:
                 os_lookup[uid] = None
+            try:
+                for vuln in tio.workbenches.asset_vulns(uid):
+                    pid = vuln.get("plugin_id")
+                    if pid in PQC_CORE:
+                        asset_store[uid]["pqc_plugins"].add(pid)
+            except Exception:
+                pass
 
         result = []
         for uid, data in asset_store.items():
             pqc_plugins = data["pqc_plugins"]
             categories = data["categories"]
-            has_non_pqc = bool(categories & NON_PQC_CATS)
+            has_non_pqc = bool(categories & WEAKNESS_CATS)
             asset = data["info"]
             result.append(
                 {
@@ -466,7 +464,6 @@ def stream_pqc_assets():
 
         tio = _get_tio()
         asset_store: Dict[str, dict] = {}
-        NON_PQC_CATS = set(PLUGINS.keys()) - {"core_pqc"}
 
         # Phase 1: collect asset universe from all category batches
         for cat, group_plugins in PLUGINS.items():
@@ -482,28 +479,26 @@ def stream_pqc_assets():
             except Exception:
                 pass
 
-        for pid in [277650, 298387, 277653]:
-            try:
-                for asset in tio.workbenches.vuln_assets(("plugin.id", "eq", str(pid))):
-                    uid = asset.get("id")
-                    if uid in asset_store:
-                        asset_store[uid]["pqc_plugins"].add(pid)
-                    elif uid:
-                        asset_store[uid] = {"info": asset, "categories": {"core_pqc"}, "pqc_plugins": {pid}}
-            except Exception:
-                pass
-
-        # Phase 2: parallel OS enrichment — stream each asset as its info resolves
+        # Phase 2: parallel enrichment — OS info + PQC plugin detection per asset.
+        # asset_vulns() returns ALL severities (including Info) unlike vuln_assets(),
+        # which silently drops Info-severity plugins such as the core PQC set.
         def enrich(uid: str, data: dict) -> dict:
             try:
                 info = tio.workbenches.asset_info(uid)
                 os_val = _first(info.get("operating_system") or [])
             except Exception:
                 os_val = None
+            try:
+                for vuln in tio.workbenches.asset_vulns(uid):
+                    pid = vuln.get("plugin_id")
+                    if pid in PQC_CORE:
+                        data["pqc_plugins"].add(pid)
+            except Exception:
+                pass
             asset = data["info"]
             pqc_plugins = data["pqc_plugins"]
             categories = data["categories"]
-            has_non_pqc = bool(categories & NON_PQC_CATS)
+            has_non_pqc = bool(categories & WEAKNESS_CATS)
             return {
                 "uuid": uid,
                 "name": _asset_name(asset),
@@ -635,7 +630,7 @@ def get_asset_detail(uuid: str):
     ipv4s    = asset_info.get("ipv4")     or []
     os_list  = asset_info.get("operating_system") or []
 
-    NON_PQC_IDS = {pid for cat, grp in PLUGINS.items() if cat != "core_pqc" for pid in grp}
+    NON_PQC_IDS = {pid for cat, grp in PLUGINS.items() if cat in WEAKNESS_CATS for pid in grp}
     has_non_pqc = bool(plugin_ids_present & NON_PQC_IDS)
 
     result = {
