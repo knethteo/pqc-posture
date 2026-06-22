@@ -4,15 +4,75 @@ Post-Quantum Cryptography readiness dashboard for Tenable Vulnerability Manageme
 
 ## Quick start
 
+### Prerequisites
+
+- [Python 3.9+](https://www.python.org/downloads/)
+- [Git](https://git-scm.com/downloads) — or just download the ZIP from GitHub
+
+### Step 1 — Get the code
+
+**Option A: Git clone**
+```bash
+git clone https://github.com/knethteo/pqc-posture.git
+cd pqc-posture
+```
+
+**Option B: Download ZIP**  
+Click **Code → Download ZIP** on GitHub, unzip it, then open a terminal inside the `pqc-posture` folder.
+
+### Step 2 — Create a virtual environment
+
+**Mac / Linux**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows — Command Prompt**
+```bat
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+**Windows — PowerShell**
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+### Step 3 — Install dependencies
+
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # then fill in your Tenable API keys
+```
+
+### Step 4 — Configure your API keys
+
+**Mac / Linux**
+```bash
+cp .env.example .env
+```
+
+**Windows**
+```bat
+copy .env.example .env
+```
+
+Open the `.env` file in any text editor and replace the placeholder values with your Tenable API keys:
+```
+TIO_ACCESS_KEY=your_tenable_access_key_here
+TIO_SECRET_KEY=your_tenable_secret_key_here
+```
+
+> Don't have keys yet? Skip this step — the app will redirect you to the in-app setup page at http://localhost:8000/setup where you can enter them.
+
+### Step 5 — Run the app
+
+```bash
 uvicorn main:app --reload --port 8000
 ```
 
 Open http://localhost:8000
-
-If you don't have API keys in `.env`, the app will redirect you to the in-app setup page at http://localhost:8000/setup.
 
 ## Docker
 
