@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PQC Posture — Fleet Overview</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">
+    <span class="nav-wordmark">tenable</span>
+    <span class="nav-badge">PQC Posture</span>
+  </div>
+  <div class="nav-links">
+    <a href="/" class="active">Fleet</a>
+    <a href="/asset">Asset detail</a>
+    <a href="/settings">Settings</a>
+  </div>
+</nav>
+
+<div class="disclaimer">
+  Personal project — not affiliated with or endorsed by any employer.
+  AI-generated tool: validate all output independently before acting. Use at your own risk.
+</div>
+
+<main class="page">
+  <div class="page-header">
+    <h1>Post-quantum cryptography readiness</h1>
+    <p>Assets with active PQC or quantum-adjacent findings in Tenable Vulnerability Management.</p>
+  </div>
+
+  <!-- Summary tiles -->
+  <div class="tiles">
+    <div class="tile">
+      <div class="tile-label">Not quantum-safe</div>
+      <div class="tile-value red" id="tile-risk">—</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Quantum-safe</div>
+      <div class="tile-value green" id="tile-safe">—</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Review</div>
+      <div class="tile-value amber" id="tile-review">—</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Total assets</div>
+      <div class="tile-value" id="tile-total">—</div>
+    </div>
+  </div>
+
+  <!-- Search toolbar -->
+  <div class="toolbar">
+    <input
+      id="search"
+      class="search-input"
+      type="search"
+      placeholder="Search by name, IP or OS…"
+      autocomplete="off"
+    />
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-col="name">Asset name <span class="sort-icon"></span></th>
+          <th data-col="ipv4">IP address <span class="sort-icon"></span></th>
+          <th data-col="os">OS <span class="sort-icon"></span></th>
+          <th data-col="verdict">Verdict <span class="sort-icon"></span></th>
+          <th data-col="pqc_findings"># PQC findings <span class="sort-icon"></span></th>
+          <th data-col="last_seen">Last seen <span class="sort-icon"></span></th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr class="loading-row">
+          <td colspan="6">
+            <span class="spinner"></span> Loading assets from Tenable…
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<footer>
+  Data source: <a href="https://cloud.tenable.com" target="_blank" rel="noopener">Tenable Vulnerability Management</a>
+  via Workbench API &mdash; plugins 277650, 277651, 277652, 277653, 277654, 298387 and related crypto-agility checks.
+  Results reflect the last 30 days of scan activity. Cached for 10 min.
+</footer>
+
+<script src="/static/app.js"></script>
+<script>
+  let allAssets = [];
+  let sortCol = "name";
+  let sortDir = 1; // 1 = asc, -1 = desc
+  let summary = {};
+
+  // ── Load ────────────────────────────────────────────────────────────────────
+  async function load(search = "") {
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      const data = await apiFetch("/api/pqc-assets?" + params.toString());
+      if (!data) return;
+
+      allAssets = data.assets;
+      summary   = data.summary;
+
+      document.getElementById("tile-risk").textContent   = summary.total_at_risk ?? "—";
+      document.getElementById("tile-safe").textContent   = summary.quantum_safe   ?? "—";
+      document.getElementById("tile-review").textContent = summary.review         ?? "—";
+      document.getElementById("tile-total").textContent  = data.total;
+
+      renderTable(allAssets);
+    } catch (err) {
+      document.getElementById("tbody").innerHTML =
+        `<tr><td colspan="6" style="padding:20px;color:var(--red)">${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  function renderTable(assets) {
+    // Sort
+    const sorted = [...assets].sort((a, b) => {
+      const av = a[sortCol] ?? "";
+      const bv = b[sortCol] ?? "";
+      return av < bv ? -sortDir : av > bv ? sortDir : 0;
+    });
+
+    if (sorted.length === 0) {
+      document.getElementById("tbody").innerHTML =
+        `<tr><td colspan="6"><div class="empty">No assets match the current filter.</div></td></tr>`;
+      return;
+    }
+
+    document.getElementById("tbody").innerHTML = sorted.map(a => `
+      <tr onclick="window.location='/asset?uuid=${esc(a.uuid)}'">
+        <td class="name-cell">${esc(a.name)}</td>
+        <td class="muted">${esc(a.ipv4 ?? "—")}</td>
+        <td class="muted">${esc(a.os  ?? "—")}</td>
+        <td>${pillHtml(a.verdict_color, a.verdict)}</td>
+        <td>${esc(a.pqc_findings)}</td>
+        <td class="muted">${fmtDate(a.last_seen)}</td>
+      </tr>
+    `).join("");
+  }
+
+  // ── Sort headers ─────────────────────────────────────────────────────────────
+  document.querySelectorAll("thead th[data-col]").forEach(th => {
+    th.addEventListener("click", () => {
+      const col = th.dataset.col;
+      if (sortCol === col) {
+        sortDir = -sortDir;
+      } else {
+        sortCol = col;
+        sortDir = 1;
+      }
+      document.querySelectorAll("thead th").forEach(h => {
+        h.classList.remove("sort-asc", "sort-desc");
+      });
+      th.classList.add(sortDir === 1 ? "sort-asc" : "sort-desc");
+      renderTable(allAssets);
+    });
+  });
+
+  // ── Search ───────────────────────────────────────────────────────────────────
+  let searchTimer;
+  document.getElementById("search").addEventListener("input", e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => load(e.target.value.trim()), 300);
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
+  checkConfigured().then(() => load());
+</script>
+</body>
+</html>

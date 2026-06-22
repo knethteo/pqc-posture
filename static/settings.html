@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PQC Posture — Settings</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">
+    <span class="nav-wordmark">tenable</span>
+    <span class="nav-badge">PQC Posture</span>
+  </div>
+  <div class="nav-links">
+    <a href="/">Fleet</a>
+    <a href="/asset">Asset detail</a>
+    <a href="/settings" class="active">Settings</a>
+  </div>
+</nav>
+
+<div class="disclaimer">
+  Personal project — not affiliated with or endorsed by any employer.
+  AI-generated tool: validate all output independently before acting. Use at your own risk.
+</div>
+
+<main class="page">
+  <div class="page-header">
+    <h1>Settings</h1>
+  </div>
+
+  <div class="settings-tabs">
+    <button class="tab-btn active" data-tab="setup">Setup</button>
+    <button class="tab-btn" data-tab="status">Status</button>
+  </div>
+
+  <!-- Setup tab -->
+  <div class="tab-panel active" id="tab-setup">
+    <div class="setup-card" style="margin:0">
+      <h1>Connect to Tenable</h1>
+      <p>
+        Enter your Tenable Vulnerability Management API credentials.
+        Keys are stored locally on the server only and are never sent to your browser.
+      </p>
+
+      <form id="setup-form">
+        <div class="form-group">
+          <label for="access-key">Access key</label>
+          <input id="access-key" type="password" autocomplete="off"
+                 placeholder="e.g. 74db437f…" required />
+        </div>
+        <div class="form-group">
+          <label for="secret-key">Secret key</label>
+          <input id="secret-key" type="password" autocomplete="off"
+                 placeholder="e.g. cb81dac0…" required />
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%">
+          Test &amp; save credentials
+        </button>
+      </form>
+
+      <div id="setup-msg"></div>
+    </div>
+  </div>
+
+  <!-- Status tab -->
+  <div class="tab-panel" id="tab-status">
+    <div id="status-content">
+      <div style="color:var(--text-muted);font-size:14px">
+        <span class="spinner"></span> Loading connection status…
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  Tenable Vulnerability Management &mdash; PQC Posture dashboard.
+  API keys are stored server-side only.
+</footer>
+
+<script src="/static/app.js"></script>
+<script>
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function activateTab(name) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === `tab-${name}`));
+  history.replaceState(null, "", `/settings?tab=${name}`);
+  if (name === "status") loadStatus();
+}
+
+document.querySelectorAll(".tab-btn").forEach(b => {
+  b.addEventListener("click", () => activateTab(b.dataset.tab));
+});
+
+// ── Setup form ────────────────────────────────────────────────────────────────
+document.getElementById("setup-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button");
+  const msg = document.getElementById("setup-msg");
+
+  btn.disabled = true;
+  btn.textContent = "Testing…";
+  msg.innerHTML = "";
+
+  try {
+    const res = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        access_key: document.getElementById("access-key").value.trim(),
+        secret_key: document.getElementById("secret-key").value.trim(),
+      }),
+    });
+
+    if (res.ok) {
+      msg.innerHTML = `<div class="alert success">Connected. Redirecting…</div>`;
+      setTimeout(() => window.location.href = "/", 800);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      msg.innerHTML = `<div class="alert error">${esc(data.detail ?? "Unknown error")}</div>`;
+      btn.disabled = false;
+      btn.textContent = "Test & save credentials";
+    }
+  } catch (err) {
+    msg.innerHTML = `<div class="alert error">${esc(err.message)}</div>`;
+    btn.disabled = false;
+    btn.textContent = "Test & save credentials";
+  }
+});
+
+// ── Status panel ──────────────────────────────────────────────────────────────
+let statusLoaded = false;
+
+async function loadStatus() {
+  if (statusLoaded) return;
+  statusLoaded = true;
+
+  const el = document.getElementById("status-content");
+  try {
+    const d = await apiFetch("/api/server-status");
+    if (!d) return;
+
+    const rows = [
+      ["Container UUID",   d.container_id   ?? "—"],
+      ["Container name",   d.container_name ?? "—"],
+      ["Region",           d.region         ?? "—"],
+      ["Licence type",     d.licence        ?? "—"],
+      ["Access key",       d.access_key_hint ?? "—"],
+    ];
+
+    el.innerHTML = `
+      <div class="status-card">
+        <div class="status-card-header">
+          <span class="status-dot ${d.configured ? "connected" : ""}"></span>
+          ${d.configured ? "Connected to Tenable Vulnerability Management" : "Not connected"}
+        </div>
+        <div class="status-rows">
+          ${rows.map(([label, val]) => `
+            <div class="status-row">
+              <div class="status-row-label">${esc(label)}</div>
+              <div class="status-row-val">${esc(val)}</div>
+            </div>`).join("")}
+        </div>
+      </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="alert error">${esc(err.message)}</div>`;
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+const initTab = new URLSearchParams(window.location.search).get("tab") || "setup";
+activateTab(initTab);
+</script>
+</body>
+</html>

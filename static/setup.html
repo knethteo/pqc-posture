@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PQC Posture — Setup</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">
+    <span class="nav-wordmark">tenable</span>
+    <span class="nav-badge">PQC Posture</span>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="setup-card">
+    <h1>Connect to Tenable</h1>
+    <p>
+      Enter your Tenable Vulnerability Management API credentials.
+      Keys are stored locally on the server only and are never sent to your browser.
+    </p>
+
+    <form id="setup-form">
+      <div class="form-group">
+        <label for="access-key">Access key</label>
+        <input id="access-key" type="password" autocomplete="off"
+               placeholder="e.g. 74db437f…" required />
+      </div>
+      <div class="form-group">
+        <label for="secret-key">Secret key</label>
+        <input id="secret-key" type="password" autocomplete="off"
+               placeholder="e.g. cb81dac0…" required />
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%">
+        Test &amp; save credentials
+      </button>
+    </form>
+
+    <div id="msg"></div>
+  </div>
+</main>
+
+<footer>
+  Tenable Vulnerability Management &mdash; PQC Posture dashboard.
+  API keys are stored server-side only.
+</footer>
+
+<script src="/static/app.js"></script>
+<script>
+  document.getElementById("setup-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector("button");
+    const msg = document.getElementById("msg");
+
+    btn.disabled = true;
+    btn.textContent = "Testing…";
+    msg.innerHTML = "";
+
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_key: document.getElementById("access-key").value.trim(),
+          secret_key: document.getElementById("secret-key").value.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        msg.innerHTML = `<div class="alert success">Connected. Redirecting…</div>`;
+        setTimeout(() => window.location.href = "/", 800);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        msg.innerHTML = `<div class="alert error">${esc(data.detail ?? "Unknown error")}</div>`;
+        btn.disabled = false;
+        btn.textContent = "Test & save credentials";
+      }
+    } catch (err) {
+      msg.innerHTML = `<div class="alert error">${esc(err.message)}</div>`;
+      btn.disabled = false;
+      btn.textContent = "Test & save credentials";
+    }
+  });
+</script>
+</body>
+</html>

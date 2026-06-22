@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PQC Posture — Asset detail</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .plugin-table td:first-child { font-family: monospace; font-size: 12.5px; }
+    .dot-present { color: var(--red);   font-size: 16px; line-height: 1; }
+    .dot-absent  { color: var(--grey);  font-size: 16px; line-height: 1; }
+    .dot-good    { color: var(--green); font-size: 16px; line-height: 1; }
+    .cipher-output { font-family: monospace; font-size: 12px; white-space: pre-wrap;
+                     background: #F4F5F6; padding: 12px; border-radius: 4px;
+                     max-height: 320px; overflow-y: auto; }
+    .cat-heading td {
+      background: #F4F5F6;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 6px 16px;
+    }
+
+    /* ── Shor's table ───────────────────────────────── */
+    .shors-cipher-cell  { font-family: monospace; font-size: 12.5px; }
+    .shors-footer {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      padding: 10px 16px 14px;
+      border-top: 1px solid var(--border);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">
+    <span class="nav-wordmark">tenable</span>
+    <span class="nav-badge">PQC Posture</span>
+  </div>
+  <div class="nav-links">
+    <a href="/">Fleet</a>
+    <a href="/asset" class="active">Asset detail</a>
+    <a href="/settings">Settings</a>
+  </div>
+</nav>
+
+<div class="disclaimer">
+  Personal project — not affiliated with or endorsed by any employer.
+  AI-generated tool: validate all output independently before acting. Use at your own risk.
+</div>
+
+<main class="page">
+
+  <!-- UUID lookup bar -->
+  <div class="uuid-bar">
+    <input id="uuid-input" class="uuid-input" type="text"
+           placeholder="Paste asset UUID (e.g. 0034abcd-…)" autocomplete="off" />
+    <button id="lookup-btn" class="btn btn-primary">Look up</button>
+  </div>
+
+  <div id="report"></div>
+
+</main>
+
+<footer>
+  Data source: <a href="https://cloud.tenable.com" target="_blank" rel="noopener">Tenable Vulnerability Management</a>
+  via Workbench API. Plugin IDs: 277650, 277651, 277652, 277653, 277654, 298387 and related crypto-agility checks.
+  Only findings present in Tenable scan data are shown — no data is fabricated.
+</footer>
+
+<script src="/static/app.js"></script>
+<script>
+// ── Category labels ───────────────────────────────────────────────────────────
+const CAT_LABELS = {
+  core_pqc:           "Core PQC signals",
+  cipher_inventory:   "Cipher / algorithm inventory",
+  weak_key_exchange:  "Weak key exchange",
+  ssh_hygiene:        "SSH hygiene",
+  cert_crypto_agility:"Certificate crypto-agility",
+  legacy_protocols:   "Legacy protocols",
+  windows_ad:         "Windows / Active Directory",
+};
+
+// Plugin 138330 (TLS 1.3) is a GOOD signal when present
+const GOOD_PLUGINS = new Set([138330, 277653]);
+
+// ── Render full report ────────────────────────────────────────────────────────
+function renderReport(d) {
+  const el = document.getElementById("report");
+  if (!d) { el.innerHTML = ""; return; }
+
+  const plugins = d.plugins || {};
+  const present = new Set(d.plugin_ids_present || []);
+
+  // Helper: single plugin row
+  function pluginRow(pid) {
+    const p = plugins[String(pid)] || { id: pid, name: "", present: false };
+    const isPresent = p.present;
+    let dotClass = isPresent
+      ? (GOOD_PLUGINS.has(pid) ? "dot-good" : "dot-present")
+      : "dot-absent";
+    const dotSymbol = isPresent ? "●" : "○";
+    const sev = p.severity ?? "—";
+    const cnt = p.count    ?? "—";
+    return `
+      <tr>
+        <td><span class="${dotClass}">${dotSymbol}</span></td>
+        <td>${esc(pid)}</td>
+        <td>${esc(p.name)}</td>
+        <td>${isPresent ? esc(sev) : '<span style="color:var(--grey)">—</span>'}</td>
+        <td>${isPresent ? esc(cnt) : '<span style="color:var(--grey)">—</span>'}</td>
+      </tr>`;
+  }
+
+  // Group plugins by category
+  const byCategory = {};
+  for (const [pid, p] of Object.entries(plugins)) {
+    const cat = p.category || "other";
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(parseInt(pid));
+  }
+
+  const CAT_ORDER = [
+    "core_pqc","cipher_inventory","weak_key_exchange","ssh_hygiene",
+    "cert_crypto_agility","legacy_protocols","windows_ad","other"
+  ];
+
+  // TLS versions detected
+  const tlsPluginMap = {
+    20007: "SSLv2/v3", 104743: "TLS 1.0", 157288: "TLS 1.1",
+    121010: "TLS 1.1", 136318: "TLS 1.2", 138330: "TLS 1.3 ✓",
+  };
+  const tlsDetected = Object.entries(tlsPluginMap)
+    .filter(([pid]) => present.has(parseInt(pid)))
+    .map(([, label]) => label);
+
+  // Quantum-adjacent algo plugins present
+  const weakKex = [83875,53360,106459,81606,83738].filter(p => present.has(p)).length;
+  const weakCert = [35291,86067,60108].filter(p => present.has(p)).length;
+
+  // Detection method
+  const detectionMethod = present.has(277650) || present.has(298387)
+    ? "Tenable network plugin scan"
+    : "No PQC plugin data";
+
+  // Shor's ciphers table
+  const shorsBlock = () => {
+    if (!present.has(298387)) return "";
+
+    const truncWarn = d.shors_truncated
+      ? `<div class="truncation-warn">
+           Output was truncated by Tenable. The cipher list below may be incomplete.
+           <a href="${esc(d.shors_tenable_url)}" target="_blank" rel="noopener">
+             View full output in Tenable &rarr;
+           </a>
+         </div>`
+      : "";
+
+    const services = d.shors_services || [];
+    let tableBody;
+
+    if (services.length === 0) {
+      const raw = d.shors_raw_output || "";
+      tableBody = raw
+        ? `<tr><td colspan="2"><div class="cipher-output">${esc(raw)}</div></td></tr>`
+        : `<tr><td colspan="2" class="muted">No structured cipher data available.</td></tr>`;
+    } else {
+      tableBody = services.map(svc => {
+        const ciphers = svc.ciphers && svc.ciphers.length ? svc.ciphers : ["—"];
+        return ciphers.map((c, i) => `
+          <tr>
+            ${i === 0 ? `<td rowspan="${ciphers.length}" style="vertical-align:top;white-space:nowrap">${esc(svc.display || svc.service)}</td>` : ""}
+            <td class="shors-cipher-cell">${esc(c)}</td>
+          </tr>`).join("");
+      }).join("");
+    }
+
+    const rawSection = d.shors_raw_output
+      ? `<details style="margin-top:12px">
+           <summary style="font-size:12px;cursor:pointer;color:var(--text-muted)">Raw plugin output</summary>
+           <div class="cipher-output" style="margin-top:6px">${esc(d.shors_raw_output)}</div>
+         </details>`
+      : "";
+
+    return `
+      <div class="section">
+        <div class="section-header">🔑 Ciphers vulnerable to Shor's algorithm (plugin 298387)</div>
+        <div class="section-body" style="padding-top:0">
+          ${truncWarn ? `<div style="padding:12px 0 0">${truncWarn}</div>` : ""}
+          <div class="table-wrap" style="margin:12px 0 0">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:38%">Service</th>
+                  <th>Offered ciphers (Shor's-breakable)</th>
+                </tr>
+              </thead>
+              <tbody>${tableBody}</tbody>
+            </table>
+            <div class="shors-footer">
+              All listed key-exchange / authentication algorithms rely on RSA or Elliptic-Curve
+              Diffie-Hellman, both reducible to polynomial time by Shor's algorithm on a
+              cryptographically relevant quantum computer (CRQC).
+            </div>
+          </div>
+          ${rawSection}
+        </div>
+      </div>`;
+  };
+
+  el.innerHTML = `
+
+    <!-- Header banner -->
+    <div class="asset-banner">
+      <div>
+        <div class="asset-banner-name">${esc(d.name)}</div>
+        <div class="asset-banner-ip">${esc(d.ipv4 ?? d.uuid)}</div>
+      </div>
+      <div>${pillHtml(d.verdict_color, d.verdict)}</div>
+    </div>
+
+    <!-- 3 security status cards -->
+    <div class="cards-3">
+      <div class="card">
+        <div class="card-eyebrow">Quantum resistant</div>
+        <div class="card-value">${present.has(277653) ? "Yes" : "No"}</div>
+        <div class="card-sub">Plugin 277653 ${present.has(277653) ? "detected" : "not detected"}</div>
+      </div>
+      <div class="card">
+        <div class="card-eyebrow">Current encryption</div>
+        <div class="card-value">${present.has(277650) ? "Classical" : present.has(277653) ? "Post-quantum" : "Unknown"}</div>
+        <div class="card-sub">Based on plugin 277650 / 277653</div>
+      </div>
+      <div class="card">
+        <div class="card-eyebrow">Status</div>
+        <div class="card-value">${pillHtml(d.verdict_color, d.verdict)}</div>
+        <div class="card-sub">Tenable VM finding verdict</div>
+      </div>
+    </div>
+
+    <!-- Technical details -->
+    <div class="section">
+      <div class="section-header">Technical details</div>
+      <div class="section-body">
+        <div class="kv-grid">
+          <div class="kv-item">
+            <label>Operating system</label>
+            <div class="kv-val">${esc(d.os ?? "—")}</div>
+          </div>
+          <div class="kv-item">
+            <label>IPv4 address</label>
+            <div class="kv-val">${esc(d.ipv4 ?? "—")}</div>
+          </div>
+          <div class="kv-item">
+            <label>FQDNs / hostnames</label>
+            <div class="kv-val">${esc([...d.fqdns, ...d.hostnames].join(", ") || "—")}</div>
+          </div>
+          <div class="kv-item">
+            <label>PQC ciphers offered</label>
+            <div class="kv-val">${present.has(277653) ? "Yes (plugin 277653)" : "None detected"}</div>
+          </div>
+          <div class="kv-item">
+            <label>Services without PQC</label>
+            <div class="kv-val">${present.has(277650) ? "Yes (plugin 277650)" : "None detected"}</div>
+          </div>
+          <div class="kv-item">
+            <label>Shor's-vulnerable services</label>
+            <div class="kv-val">${present.has(298387) ? "Yes — see table below" : "None detected"}</div>
+          </div>
+          <div class="kv-item">
+            <label>TLS versions detected</label>
+            <div class="kv-val">${esc(tlsDetected.join(", ") || "—")}</div>
+          </div>
+          <div class="kv-item">
+            <label>Weak key exchange / algorithms</label>
+            <div class="kv-val">${weakKex > 0 ? `${weakKex} finding${weakKex > 1 ? "s" : ""}` : "None detected"}</div>
+          </div>
+          <div class="kv-item">
+            <label>Weak certificate crypto</label>
+            <div class="kv-val">${weakCert > 0 ? `${weakCert} finding${weakCert > 1 ? "s" : ""}` : "None detected"}</div>
+          </div>
+          <div class="kv-item">
+            <label>Detection method</label>
+            <div class="kv-val">${esc(detectionMethod)}</div>
+          </div>
+          <div class="kv-item">
+            <label>Last checked</label>
+            <div class="kv-val">${fmtDate(d.last_seen)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shor's cipher table -->
+    ${shorsBlock()}
+
+    <!-- All PQC + crypto findings table -->
+    <div class="section">
+      <div class="section-header">PQC &amp; cryptography findings</div>
+      <div class="table-wrap" style="margin:0">
+        <table class="plugin-table">
+          <thead>
+            <tr>
+              <th style="width:28px"></th>
+              <th>Plugin ID</th>
+              <th>Name</th>
+              <th>Severity</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${CAT_ORDER.flatMap(cat => {
+              const pids = byCategory[cat];
+              if (!pids || pids.length === 0) return [];
+              const label = CAT_LABELS[cat] || cat;
+              return [
+                `<tr class="cat-heading"><td colspan="5">${esc(label)}</td></tr>`,
+                ...pids.sort((a, b) => a - b).map(pluginRow)
+              ];
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Recommendation box -->
+    <div class="rec-box">
+      <h3>Recommended remediation steps</h3>
+      <ul>
+        <li>Replace RSA and ECDHE key exchange with <strong>ML-KEM</strong> (CRYSTALS-Kyber) or hybrid PQC schemes on all exposed services.</li>
+        <li>Disable <strong>TLS 1.0, TLS 1.1, SSLv2, and SSLv3</strong> — these are no longer considered acceptable for any environment.</li>
+        <li>Remove <strong>3DES, RC4, and CBC-mode</strong> cipher suites from TLS configurations to eliminate SWEET32 and CBC padding attack exposure.</li>
+        <li>Rotate certificates signed with <strong>MD5 or SHA-1</strong> to SHA-256 or stronger; replace RSA keys below 2048 bits.</li>
+        <li>Where weak Kerberos encryption types (plugin 150481) are present, enforce <strong>AES256-CTS-HMAC-SHA1-96</strong> or stronger in Active Directory.</li>
+        <li>Re-scan with Tenable after changes to verify closure — look for plugin 277653 (quantum-safe) to appear and 277650 / 298387 to clear.</li>
+      </ul>
+    </div>
+  `;
+}
+
+// ── Lookup ────────────────────────────────────────────────────────────────────
+async function lookup(uuid) {
+  if (!uuid) return;
+  document.getElementById("uuid-input").value = uuid;
+  document.getElementById("report").innerHTML =
+    `<div style="padding:32px;text-align:center;color:var(--text-muted)">
+       <span class="spinner"></span> Fetching asset data…
+     </div>`;
+  try {
+    const data = await apiFetch(`/api/asset/${encodeURIComponent(uuid)}`);
+    if (!data) return;
+    renderReport(data);
+    // Update URL without reloading
+    history.replaceState(null, "", `/asset?uuid=${encodeURIComponent(uuid)}`);
+  } catch (err) {
+    document.getElementById("report").innerHTML =
+      `<div class="alert error" style="max-width:600px">${esc(err.message)}</div>`;
+  }
+}
+
+// ── Wire up controls ──────────────────────────────────────────────────────────
+document.getElementById("lookup-btn").addEventListener("click", () => {
+  lookup(document.getElementById("uuid-input").value.trim());
+});
+
+document.getElementById("uuid-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") lookup(e.target.value.trim());
+});
+
+// ── Deep-link via ?uuid= ──────────────────────────────────────────────────────
+checkConfigured().then(() => {
+  const uuid = new URLSearchParams(window.location.search).get("uuid");
+  if (uuid) lookup(uuid);
+});
+</script>
+</body>
+</html>
