@@ -348,14 +348,17 @@ def get_pqc_assets(
         # Step 1: one batch query per plugin category (7 calls).
         # vuln_assets() accepts comma-separated plugin IDs → OR logic.
         # This gives us the asset universe + which categories fired per asset.
+        # core_pqc plugins are Info severity — vuln_assets() silently drops Info
+        # by default, so we add ("severity", "eq", "info") for that category.
         asset_store: Dict[str, dict] = {}  # uuid -> {info, categories, pqc_plugins}
 
         for cat, group_plugins in PLUGINS.items():
             id_str = ",".join(str(p) for p in group_plugins.keys())
+            filters = [("plugin.id", "eq", id_str)]
+            if cat == "core_pqc":
+                filters.append(("severity", "eq", "info"))
             try:
-                assets_in_cat = list(tio.workbenches.vuln_assets(
-                    ("plugin.id", "eq", id_str)
-                ))
+                assets_in_cat = list(tio.workbenches.vuln_assets(*filters))
                 for asset in assets_in_cat:
                     uid = asset.get("id")
                     if not uid:
@@ -465,11 +468,16 @@ def stream_pqc_assets():
         tio = _get_tio()
         asset_store: Dict[str, dict] = {}
 
-        # Phase 1: collect asset universe from all category batches
+        # Phase 1: collect asset universe from all category batches.
+        # core_pqc plugins are Info severity — vuln_assets() silently drops Info
+        # by default, so we add ("severity", "eq", "info") for that category.
         for cat, group_plugins in PLUGINS.items():
             id_str = ",".join(str(p) for p in group_plugins.keys())
+            filters = [("plugin.id", "eq", id_str)]
+            if cat == "core_pqc":
+                filters.append(("severity", "eq", "info"))
             try:
-                for asset in tio.workbenches.vuln_assets(("plugin.id", "eq", id_str)):
+                for asset in tio.workbenches.vuln_assets(*filters):
                     uid = asset.get("id")
                     if not uid:
                         continue

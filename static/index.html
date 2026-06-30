@@ -28,7 +28,7 @@
 <main class="page">
   <div class="page-header">
     <h1>Post-quantum cryptography readiness</h1>
-    <p>Assets with active PQC or quantum-adjacent findings in Tenable Vulnerability Management.</p>
+    <p>Quantum-readiness verdicts for assets in your Tenable VM estate. Verdicts are derived solely from Nessus plugin results — no data is inferred or fabricated.</p>
   </div>
 
   <!-- Summary tiles -->
@@ -53,10 +53,10 @@
 
   <!-- Verdict legend -->
   <div class="legend">
-    <div class="legend-item"><span class="legend-dot red"></span><strong>Not quantum-safe</strong> — Plugin 277650 or 298387 fired; services are using classical cryptography with no PQC equivalent detected.</div>
-    <div class="legend-item"><span class="legend-dot green"></span><strong>Quantum-safe</strong> — Plugin 277653 fired; post-quantum ciphers confirmed on all scanned services.</div>
-    <div class="legend-item"><span class="legend-dot amber"></span><strong>Review</strong> — No PQC-specific scan data yet, but crypto-adjacent weaknesses (weak key exchange, legacy TLS, weak certificates) were found. Run plugins 277650 / 277653 to get a definitive verdict.</div>
-    <div class="legend-item"><span class="legend-dot grey"></span><strong>No PQC data</strong> — Asset appeared in scan results but no PQC or crypto-adjacent plugins have fired.</div>
+    <div class="legend-item"><span class="legend-dot red"></span><strong>Not quantum-safe</strong> — Plugin 277650 (Remote Services Not Using Post-Quantum Ciphers) or 298387 (Shor's Harvest Now Decrypt Later) fired, and 277653 did not. At least one service is confirmed to use classical cryptography only, with no post-quantum equivalent detected.</div>
+    <div class="legend-item"><span class="legend-dot green"></span><strong>Quantum-safe</strong> — Plugin 277653 (Remote Services Using Post-Quantum Ciphers) fired, and neither 277650 nor 298387 fired. All scanned services offer post-quantum ciphers; no classical-only services were detected.</div>
+    <div class="legend-item"><span class="legend-dot amber"></span><strong>Review</strong> — Two distinct triggers: (1) Both a not-safe signal (277650 or 298387) and 277653 fired — partial PQC adoption; some services are quantum-safe while others still use classical cryptography. (2) No core PQC plugins have fired on this asset, but crypto-adjacent weakness plugins (weak key exchange, legacy TLS, weak certificates) were found — quantum posture is unknown until 277650 or 277653 scans this asset.</div>
+    <div class="legend-item"><span class="legend-dot grey"></span><strong>No PQC data</strong> — No core PQC plugins (277650–277654, 298387) and no crypto-adjacent weakness plugins have fired. The asset appeared in scan results for an unrelated reason. Quantum posture is completely unknown.</div>
   </div>
 
   <!-- Search toolbar -->

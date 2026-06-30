@@ -227,13 +227,13 @@ function renderReport(d) {
     <div class="cards-3">
       <div class="card">
         <div class="card-eyebrow">Quantum resistant</div>
-        <div class="card-value">${present.has(277653) ? "Yes" : "No"}</div>
-        <div class="card-sub">Plugin 277653 ${present.has(277653) ? "detected" : "not detected"}</div>
+        <div class="card-value">${present.has(277653) && (present.has(277650) || present.has(298387)) ? "Partial" : present.has(277653) ? "Yes" : "No"}</div>
+        <div class="card-sub">Plugin 277653 ${present.has(277653) ? "detected" : "not detected"}${present.has(277653) && (present.has(277650)||present.has(298387)) ? " — some services still classical" : ""}</div>
       </div>
       <div class="card">
         <div class="card-eyebrow">Current encryption</div>
-        <div class="card-value">${present.has(277650) ? "Classical" : present.has(277653) ? "Post-quantum" : "Unknown"}</div>
-        <div class="card-sub">Based on plugin 277650 / 277653</div>
+        <div class="card-value">${present.has(277650)||present.has(298387) ? (present.has(277653) ? "Mixed" : "Classical") : present.has(277653) ? "Post-quantum" : "Unknown"}</div>
+        <div class="card-sub">Based on plugins 277650, 277653, 298387</div>
       </div>
       <div class="card">
         <div class="card-eyebrow">Status</div>
@@ -301,6 +301,11 @@ function renderReport(d) {
     <!-- All PQC + crypto findings table -->
     <div class="section">
       <div class="section-header">PQC &amp; cryptography findings</div>
+      <div style="display:flex;gap:16px;padding:8px 0 12px;font-size:13px;color:var(--muted)">
+        <span><span style="color:var(--green);font-size:16px">●</span> Fired — positive signal</span>
+        <span><span style="color:var(--red);font-size:16px">●</span> Fired — risk signal</span>
+        <span><span style="color:var(--grey);font-size:16px">○</span> Not detected</span>
+      </div>
       <div class="table-wrap" style="margin:0">
         <table class="plugin-table">
           <thead>

@@ -116,6 +116,21 @@ You can also enter them via the in-app setup page — they are stored locally in
 
 Configured in `main.py` as `PLUGINS` — a single dict grouped by category. Edit it there to add/remove plugin IDs.
 
+## Verdict logic
+
+Each asset is assigned one of four verdicts based solely on which Nessus plugins fired. The two decisive plugins are **277650** (Remote Services *Not* Using Post-Quantum Ciphers) and **277653** (Remote Services *Using* Post-Quantum Ciphers). Plugin **298387** (Shor's Harvest Now Decrypt Later) is treated as an additional not-safe signal equivalent to 277650.
+
+| Verdict | Color | Condition |
+|---|---|---|
+| **Not Quantum-Safe** | Red | 277650 or 298387 fired **and** 277653 did not. At least one service confirmed using classical cryptography only. |
+| **Quantum-Safe** | Green | 277653 fired **and** neither 277650 nor 298387 fired. All scanned services offer post-quantum ciphers. |
+| **Review** | Amber | (1) Both a not-safe signal (277650 or 298387) and 277653 fired — partial PQC adoption, some services still classical. OR (2) No core PQC plugins fired, but crypto-adjacent weakness plugins (weak key exchange, legacy TLS, weak certificates) were found — quantum posture unknown until 277650/277653 scan this asset. |
+| **No PQC data** | Grey | No core PQC plugins (277650–277654, 298387) and no crypto-adjacent weakness plugins have fired. Asset appeared in scan results for an unrelated reason. Quantum posture completely unknown. |
+
+### Why "Review" covers two different situations
+
+The first Review trigger (partial PQC) means the asset has mixed coverage — some services are already hardened, but others are still reachable with classical crypto. The second (no PQC scan yet) means the PQC-specific plugins simply haven't run against this asset yet. In both cases a definitive verdict requires either 277650 or 277653 to fire without the other.
+
 ## Caching
 
 Workbench calls are cached in memory for 10 minutes. Cache is cleared when new API keys are set. Restart the server to force a full refresh.
